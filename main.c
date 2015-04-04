@@ -281,8 +281,6 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	print_magn_field(meas,magn_field,rows,cols);
 	print_magn_field(direc,magn_field,rows,cols);
 	
-	
-	
 	for(tau=t_min;tau <= t_max;tau = next_tau(tau,t_min,t_max,n_taus)){
 		reset_system(original_lattice,lattice);
 		//meas.magn  direc.spin
@@ -308,10 +306,6 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 				fprintf(direc,"%d\n", step_index(step_counter,n_steps,n_measurments));
 				print_lattice(direc,lattice,rows,cols);
 			}
-			
-			
-			
-			
 		}
 		//meas.magn
 		fprintf(meas, "result:\n");
