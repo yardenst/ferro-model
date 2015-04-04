@@ -312,7 +312,7 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 		fprintf(meas, "%lf	%lf	%lf	%lf \n",
 									thermal_average(n_steps,energies,1),
 									thermal_stdev(n_steps,energies),
-								    thermal_average(n_steps,magnetizations,1),
+									thermal_average(n_steps,magnetizations,1),
 									thermal_stdev(n_steps,magnetizations));
 	}
 }
