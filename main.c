@@ -188,9 +188,9 @@ double next_tau(double tau,double t_min,double t_max,int n_taus){
 	return tau + (t_max-t_min)/(double)(n_taus-1);
 }
 //tested(by eye)
-void reset_system(int original_lattice[40][40],int active_lattice[40][40],int *spin_flipped){
+void reset_system(int original_lattice[40][40],int active_lattice[40][40]){
 	copy_arr(original_lattice,active_lattice);
-	*spin_flipped=0;
+	
 }
 //tested (by eye)
 double M(int lattice[40][40],int rows,int cols){
@@ -245,6 +245,17 @@ int need_to_print_measurment(int current_step,int total,int total_meas){
 int step_index(int current_step,int total,int total_meas){
 	return current_step / (total/total_meas);
 }
+//make a step in the simulation (try to flip a spin)
+void do_step(double rnd1,double rnd2, int rows, int cols,int lattice[40][40],double magn_field[40][40],double J,double tau,char bc ){
+			int _r,_c;
+			double probabilty_to_flip;
+
+			choose_spin(rnd1,rows,cols,&_r,&_c);
+			probabilty_to_flip = calculate_transition_probability(_r,_c,rows,cols,lattice,magn_field,J,tau,bc);
+			if(rnd2<=probabilty_to_flip){
+				flip_spin(_r,_c,lattice);
+			}
+}
 //runs the bussiness logic
 int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	//given variables
@@ -259,11 +270,8 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	//dynamic variables
 	int step_counter; //in which step are we?
 	int lattice[40][40];copy_arr(original_lattice,lattice); //duplicate the original lattice
-	int _r,_c;//indexes for the lattice
-	double probabilty_to_flip;//what is the probably to flip the spin at [_r,_c]?
 	double tau;
 	double energies[n_steps],magnetizations[n_steps];
-	int spins_flipped=0;
 	
 	//meas.magn direc.spin
 	fprintf(meas,"%d	%lf	%d	%d	%d	%d\n",n_taus,J,1,rows,cols,n_measurments);
@@ -276,19 +284,15 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	
 	
 	for(tau=t_min;tau <= t_max;tau = next_tau(tau,t_min,t_max,n_taus)){
-		reset_system(original_lattice,lattice,&spins_flipped);
+		reset_system(original_lattice,lattice);
 		//meas.magn  direc.spin
 		fprintf(meas, "%lf\n",tau);
 		fprintf(direc, "%lf\n",tau);
 		
 		for(step_counter=0;step_counter<n_steps;step_counter++){
 			
-			choose_spin(random_numbers[step_counter][0],rows,cols,&_r,&_c);
-			probabilty_to_flip = calculate_transition_probability(_r,_c,rows,cols,lattice,magn_field,J,tau,boundry_conditions);
-			if(random_numbers[step_counter][1]<=probabilty_to_flip){
-				flip_spin(_r,_c,lattice);
-				spins_flipped++;
-			}
+			do_step(random_numbers[step_counter][0],random_numbers[step_counter][1],rows,cols,lattice,magn_field,J,tau,boundry_conditions);
+		
 			energies[step_counter] = E(boundry_conditions,rows,cols,lattice,magn_field,J);
 			magnetizations[step_counter] = M(lattice,rows,cols);
 			
