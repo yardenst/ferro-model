@@ -2,9 +2,22 @@
 #include <stdlib.h>
 #include <math.h>
 
+//returns 0 if number is not an integer
+//returns 1 if number is an integer
+int validate_int(double number){
+}
+//returns 0 if number is not positive
+//returns 1 if number is positive
+int validate_positive(double number){
+}
+//returns 0 if number is not a valid spin value (-1 or 1)
+//returns 1 if number is a valid spin value (-1 or 1)
+int validate_spin_value(double number){
+}
 
 
-void read_input_data(FILE *input_file,
+
+void read_input_data(FILE *input_file, 
 					 int *rows,
 					 int *cols,
 					 double *J,
@@ -21,21 +34,34 @@ void read_input_data(FILE *input_file,
 					 ){
 	char val;
 	int n,rc,i,j;
+	int validator_count=0;
 	
-	int spin;double mg;
+	//double values for int values
+	double rows_d,cols_d,n_taus_d,n_steps_d,n_measurments_d,lattice_item_d,corr_spin_d;
 	
 	for(n=1;(rc=fscanf(input_file,"%c",&val))!=EOF;n++){
 		
-		//PASS HEADERS
+		//PASS HEADERS NAMES
 		if((n<5) || (n>5 && n<15) || (n>15 && n<33) || (n>33 && n<48)) continue;
 		//READ "DATA"
 		if(n==5){
-			fscanf(input_file,"%d	%d	%lf	%lf	%lf	%d	%c	%d	%d",rows,cols,J,t_min,t_max,n_taus,bc,n_steps,n_measurments);
+			fscanf(input_file,"%lf	%lf	%lf	%lf	%lf	%lf	%c	%lf	%lf",&rows_d,&cols_d,J,t_min,t_max,&n_taus_d,bc,&n_steps_d,&n_measurments_d);
+			
+			validator_count+=validate_int(rows_d) + validate_int(cols_d) + validate_int(n_taus_d) + validate_int(n_steps_d) + validate_int(n_measurments_d) ;
+			
+			*rows=(int)rows_d;
+			*cols=(int)cols_d;
+			*n_taus=(int)n_taus_d;
+			*n_steps=(int)n_steps_d;
+			*n_measurments=(int)n_measurments_d;
+			
+			
 		}
 		//READ "ELEMENTS"
 		if(n==15){
+			
 			for(i=0;i<(*rows);i++){
-				for(j=0;j<(*cols);j++){
+				for(j=0;j<(*cols);j++){	
 					fscanf(input_file,"%d	%lf",&lattice[i][j],&magn_field[i][j]);
 				}
 			}
@@ -53,6 +79,9 @@ void read_input_data(FILE *input_file,
 		
 		
 		}
+		
+	
+		
 }
 
 //tested
@@ -269,7 +298,8 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	
 	//dynamic variables
 	int step_counter; //in which step are we?
-	int lattice[40][40];copy_arr(original_lattice,lattice); //duplicate the original lattice
+	int lattice[40][40];
+	copy_arr(original_lattice,lattice); //duplicate the original lattice
 	double tau;
 	double energies[n_steps],magnetizations[n_steps];
 	
@@ -299,9 +329,9 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 				fprintf(meas,"%d	%lf	%lf	%lf	%lf\n",
 									  step_index(step_counter,n_steps,n_measurments),
 									  energies[step_counter],
-									  thermal_stdev(step_counter+1,energies),
+									  thermal_stdev(step_counter,energies),
 									  magnetizations[step_counter],
-									  thermal_stdev(step_counter+1,magnetizations));
+									  thermal_stdev(step_counter,magnetizations));
 				//direc.spin
 				fprintf(direc,"%d\n", step_index(step_counter,n_steps,n_measurments));
 				print_lattice(direc,lattice,rows,cols);
@@ -325,6 +355,7 @@ int main(int argc, char **argv)
 	FILE *corr_output_file = fopen("./corr.corr","w"); //stdout;
 	
 	start(input_file, meas_output_file, direc_output_file, corr_output_file);
+	
 	
 	
 }
