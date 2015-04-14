@@ -30,7 +30,7 @@ void read_input_data(FILE *input_file,
 					 int lattice[40][40],
 					 double magn_field[40][40],
 					 int *corr_spin,
-					 double random_numbers[100000][2]
+					 double random_numbers[300000][2]
 					 ){
 	char val;
 	int n,rc,i,j;
@@ -166,13 +166,17 @@ void cell_index_to_row_col(int index, int rows, int cols ,int* row ,int* col){
 	*row=r;
 	*col=c;
 }
-//tested
 //picks two random numbers from the rows and cols
-//higher random num should give a higher numbers
+//the probability to choose a site should be equal
+//higher random number---->higer site index
+// n=rows*cols  ,   i=0...n-1; 
+// should be True:  i/n <= rnd <= (i+1)/n for the correct i
+// or i <= rnd*n <= i+1
+// and therefore i= lower integer part of rnd*n
 void choose_spin(double random_num,int rows, int cols ,int* row ,int* col){
-	int max_index=rows*cols -1; //i count from zero
-	int site_number=(int)(random_num*max_index);
-	
+	int n=rows*cols;
+	int site_number;	
+	site_number = random_num ==1 ? n-1 : (int)(random_num*n);
 	cell_index_to_row_col(site_number,rows,cols,row,col);
 }
 
@@ -293,7 +297,7 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	char boundry_conditions;
 	int original_lattice[40][40];
 	double magn_field[40][40];
-	double random_numbers[100000][2];
+	double random_numbers[300000][2];
 	read_input_data(input,&rows,&cols,&J,&t_min,&t_max,&n_taus,&n_steps,&n_measurments,&boundry_conditions,original_lattice,magn_field,&corr_spin,random_numbers);
 	
 	//dynamic variables
@@ -355,7 +359,5 @@ int main(int argc, char **argv)
 	FILE *corr_output_file = fopen("./corr.corr","w"); //stdout;
 	
 	start(input_file, meas_output_file, direc_output_file, corr_output_file);
-	
-	
-	
+
 }
