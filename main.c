@@ -30,7 +30,7 @@ void read_input_data(FILE *input_file,
 					 int lattice[40][40],
 					 double magn_field[40][40],
 					 int *corr_spin,
-					 double random_numbers[300000][2]
+					 double random_numbers[750000][2]
 					 ){
 	char val;
 	int n,rc,i,j;
@@ -192,31 +192,6 @@ void copy_arr(int source[40][40],int target[40][40]){
 }
 
 //tested
-//given an array with numbers and the size of it and some number "exponent"
-//calculates SUM(array_item^exponent)/array_size
-double thermal_average(int how_many,double *array,double exponent){
-	double sum=0;
-	int i;
-	for(i=0;i<how_many;i++){
-		sum+=pow(*array,exponent);
-		array++;
-	}
-	return sum / (double)how_many;
-}
-//tested
-//returns the POPULATION STDEV of the given array of size "how_many"
-double thermal_stdev(int how_many,double *array){
-	double th_avg_en_sq=thermal_average(how_many,array,2);
-	double th_avg_sq=pow(thermal_average(how_many,array,1),2);
-	double variance = th_avg_en_sq - th_avg_sq;
-	double stdev=pow(variance ,0.5);
-	if(stdev!=stdev){ //stdev is NaN,probably problem of double size precision
-		return 0;
-	}
-	return stdev;
-}
-
-//tested
 double next_tau(double tau,double t_min,double t_max,int n_taus){
 	return tau + (t_max-t_min)/(double)(n_taus-1);
 }
@@ -289,6 +264,25 @@ void do_step(double rnd1,double rnd2, int rows, int cols,int lattice[40][40],dou
 				flip_spin(_r,_c,lattice);
 			}
 }
+
+//recalculate the average
+//<A>n = <A>(n-1) * (n-1)/n  + An/n
+//item_index is the index of the items. first one is 1 last is n
+// [A1,A2,A3.......An]
+double update_thermal_average(double thermal_average_n_minus_one,int item_index, double new_item){
+	if(item_index==1){
+		return new_item;
+	}
+	return thermal_average_n_minus_one*(item_index-1)/(double)(item_index) + (new_item/item_index);
+}
+double thermal_stdev_new(double average,double average_squared){
+	double variance = average_squared - pow(average,2);
+	double stdev=pow(variance ,0.5);
+	if(stdev!=stdev){ //stdev is NaN,probably problem of double size precision
+		return 0;
+	}
+	return stdev;
+}
 //runs the bussiness logic
 int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	//given variables
@@ -297,7 +291,7 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	char boundry_conditions;
 	int original_lattice[40][40];
 	double magn_field[40][40];
-	double random_numbers[300000][2];
+	double random_numbers[750000][2];
 	read_input_data(input,&rows,&cols,&J,&t_min,&t_max,&n_taus,&n_steps,&n_measurments,&boundry_conditions,original_lattice,magn_field,&corr_spin,random_numbers);
 	
 	//dynamic variables
@@ -305,7 +299,9 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	int lattice[40][40];
 	copy_arr(original_lattice,lattice); //duplicate the original lattice
 	double tau;
-	double energies[n_steps],magnetizations[n_steps];
+	double current_energy,current_magnetization;
+	double energy_average_n=0,magnetization_average_n=0;
+	double energy_squared_average_n=0,magnetization_squared_average_n=0;
 	
 	//meas.magn direc.spin
 	fprintf(meas,"%d	%lf	%d	%d	%d	%d\n",n_taus,J,1,rows,cols,n_measurments);
@@ -323,31 +319,36 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 		
 		for(step_counter=0;step_counter<n_steps;step_counter++){
 			
-			do_step(random_numbers[step_counter][0],random_numbers[step_counter][1],rows,cols,lattice,magn_field,J,tau,boundry_conditions);
-		
-			energies[step_counter] = E(boundry_conditions,rows,cols,lattice,magn_field,J);
-			magnetizations[step_counter] = M(lattice,rows,cols);
+			current_energy=E(boundry_conditions,rows,cols,lattice,magn_field,J);
+			current_magnetization=M(lattice,rows,cols);
+			
+			energy_average_n=update_thermal_average(energy_average_n,step_counter+1,current_energy);
+			energy_squared_average_n=update_thermal_average(energy_squared_average_n,step_counter+1,pow(current_energy,2));
+
+			magnetization_average_n=update_thermal_average(magnetization_average_n,step_counter+1,current_magnetization);
+			magnetization_squared_average_n=update_thermal_average(magnetization_squared_average_n,step_counter+1,pow(current_magnetization,2));
 			
 			if(need_to_print_measurment(step_counter,n_steps,n_measurments)){
 				//meas.magn
 				fprintf(meas,"%d	%lf	%lf	%lf	%lf\n",
 									  step_index(step_counter,n_steps,n_measurments),
-									  energies[step_counter],
-									  thermal_stdev(step_counter,energies),
-									  magnetizations[step_counter],
-									  thermal_stdev(step_counter,magnetizations));
+									  current_energy,
+									  thermal_stdev_new(energy_average_n,energy_squared_average_n),
+									  current_magnetization,
+									  thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
 				//direc.spin
 				fprintf(direc,"%d\n", step_index(step_counter,n_steps,n_measurments));
 				print_lattice(direc,lattice,rows,cols);
 			}
+			do_step(random_numbers[step_counter][0],random_numbers[step_counter][1],rows,cols,lattice,magn_field,J,tau,boundry_conditions);
 		}
 		//meas.magn
 		fprintf(meas, "result:\n");
 		fprintf(meas, "%lf	%lf	%lf	%lf \n",
-									thermal_average(n_steps,energies,1),
-									thermal_stdev(n_steps,energies),
-									thermal_average(n_steps,magnetizations,1),
-									thermal_stdev(n_steps,magnetizations));
+									energy_average_n,
+									thermal_stdev_new(energy_average_n,energy_squared_average_n),
+									magnetization_average_n,
+									thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
 	}
 }
 int main(int argc, char **argv)
@@ -359,5 +360,4 @@ int main(int argc, char **argv)
 	FILE *corr_output_file = fopen("./corr.corr","w"); //stdout;
 	
 	start(input_file, meas_output_file, direc_output_file, corr_output_file);
-
 }
