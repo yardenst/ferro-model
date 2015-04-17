@@ -2,22 +2,49 @@
 #include <stdlib.h>
 #include <math.h>
 
-//returns 0 if number is not an integer
-//returns 1 if number is an integer
+//logs a message to the given file in a log info style
+void logg(char msg[255],FILE *log_file){
+	fprintf(log_file,"INFO: %s",msg);
+	fprintf(log_file,"\n");	
+}
+
+//tested
+//returns 1 if number is not an integer
+//returns 0 if number is an integer
 int validate_int(double number){
+	return !(number==(int)number);
 }
-//returns 0 if number is not positive
-//returns 1 if number is positive
+//returns 1 if number is not positive
+//returns 0 if number is positive
 int validate_positive(double number){
+	return !(number>0);
 }
-//returns 0 if number is not a valid spin value (-1 or 1)
-//returns 1 if number is a valid spin value (-1 or 1)
+//returns 1 if number is not a valid spin value (-1 or 1)
+//returns 0 if number is a valid spin value (-1 or 1)
 int validate_spin_value(double number){
+	return !((number==1) || (number==-1));
+}
+//returns 1 if bc_value is not the char o or c, 0 otherwise
+int validate_bc_value(char bc_value){
+	return !(bc_value=='o' || bc_value=='c');
 }
 
+int validate_spin_range(int rows,int cols, int index){
+		return !(index >=0 && index <=(rows*cols-1));
+}
 
+int validate_rnd_number(double number){
+	return !(number>=0 && number<=1);
+}
 
-void read_input_data(FILE *input_file, 
+void log_section_error(FILE *log,int validator_count,char section_name[100]){
+		if(validator_count>0){
+				fprintf(log,"WARNING: %d errors on %s section\n", validator_count, section_name);
+			}
+}
+
+//returns number of errors found on input FILE
+int read_input_data(FILE *input_file, FILE *errors_file,
 					 int *rows,
 					 int *cols,
 					 double *J,
@@ -30,11 +57,11 @@ void read_input_data(FILE *input_file,
 					 int lattice[40][40],
 					 double magn_field[40][40],
 					 int *corr_spin,
-					 double random_numbers[750000][2]
+					 double random_numbers[300000][2]
 					 ){
 	char val;
 	int n,rc,i,j;
-	int validator_count=0;
+	int validator_count=0,errors_before=0;
 	
 	//double values for int values
 	double rows_d,cols_d,n_taus_d,n_steps_d,n_measurments_d,lattice_item_d,corr_spin_d;
@@ -47,39 +74,55 @@ void read_input_data(FILE *input_file,
 		if(n==5){
 			fscanf(input_file,"%lf	%lf	%lf	%lf	%lf	%lf	%c	%lf	%lf",&rows_d,&cols_d,J,t_min,t_max,&n_taus_d,bc,&n_steps_d,&n_measurments_d);
 			
-			validator_count+=validate_int(rows_d) + validate_int(cols_d) + validate_int(n_taus_d) + validate_int(n_steps_d) + validate_int(n_measurments_d) ;
-			
 			*rows=(int)rows_d;
 			*cols=(int)cols_d;
 			*n_taus=(int)n_taus_d;
 			*n_steps=(int)n_steps_d;
 			*n_measurments=(int)n_measurments_d;
 			
+			validator_count+=validate_int(rows_d) + validate_int(cols_d) + validate_int(n_taus_d) + 
+							 validate_int(n_steps_d) + validate_int(n_measurments_d) +
+							 validate_positive(*rows) + validate_positive(*cols) + 
+							 validate_positive(*n_taus) + validate_positive(*n_steps) +
+							 validate_positive(*n_measurments) + validate_positive(*t_min) + 
+							 validate_positive(*t_max) + validate_bc_value(*bc) + (*n_measurments>*n_steps); 
+							 
+			log_section_error(errors_file,validator_count,"DATA");
+			
 			
 		}
 		//READ "ELEMENTS"
 		if(n==15){
-			
+			errors_before=validator_count;
 			for(i=0;i<(*rows);i++){
 				for(j=0;j<(*cols);j++){	
 					fscanf(input_file,"%d	%lf",&lattice[i][j],&magn_field[i][j]);
+					validator_count += validate_spin_value(lattice[i][j]);
 				}
 			}
+			log_section_error(errors_file,validator_count-errors_before,"ELEMENTS");
 		}
 		//READ "CORRELATION SPIN"
 		if(n==33){
-			fscanf(input_file,"%d",corr_spin);
+			errors_before=validator_count;
+			fscanf(input_file,"%lf",&corr_spin_d);
+			*corr_spin=(int)corr_spin_d;
+			validator_count+=validate_int(corr_spin_d) + validate_spin_range(*rows,*cols,*corr_spin);
+			log_section_error(errors_file,validator_count-errors_before,"CORRELATION SPIN");
 		}
 		//READ "RANDOM NUMBERS"
 		if(n==48){
+			errors_before=validator_count;
 			for(i=0;i<(*n_steps);i++){
 					fscanf(input_file,"%lf	%lf",&random_numbers[i][0],&random_numbers[i][1]);
+					validator_count += validate_rnd_number(random_numbers[i][0]) + validate_rnd_number(random_numbers[i][1]) ;
 				}
+			log_section_error(errors_file,validator_count-errors_before,"RANDOM NUMBERS");	
 		}
 		
 		
 		}
-		
+		return validator_count;
 	
 		
 }
@@ -283,16 +326,32 @@ double thermal_stdev_new(double average,double average_squared){
 	}
 	return stdev;
 }
+
+double G(int l,int m,int rows,int cols, int lattice[40][40]){
+	int row_l,col_l,row_m,col_m;
+	cell_index_to_row_col(l,rows,cols,&row_l,&col_l);
+	cell_index_to_row_col(m,rows,cols,&row_m,&col_m);
+	
+	
+	
+}
+
 //runs the bussiness logic
-int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
+int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc, FILE *corr){
 	//given variables
 	int rows,cols,n_taus,n_steps,n_measurments,corr_spin;
 	double J,t_min,t_max;
 	char boundry_conditions;
 	int original_lattice[40][40];
 	double magn_field[40][40];
-	double random_numbers[750000][2];
-	read_input_data(input,&rows,&cols,&J,&t_min,&t_max,&n_taus,&n_steps,&n_measurments,&boundry_conditions,original_lattice,magn_field,&corr_spin,random_numbers);
+	double random_numbers[300000][2];
+	logg("reading initial data",log_file);
+	int errors=read_input_data(input,error_output,&rows,&cols,&J,&t_min,&t_max,&n_taus,&n_steps,&n_measurments,&boundry_conditions,original_lattice,magn_field,&corr_spin,random_numbers);
+	if(errors>0){
+		fprintf(error_output,"ERROR: we cannot proceed! you have %d errors on your input data\n",errors);
+		return 1;
+	}
+	logg("finish reading initial data",log_file);
 	
 	//dynamic variables
 	int step_counter; //in which step are we?
@@ -302,7 +361,10 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	double current_energy,current_magnetization;
 	double energy_average_n=0,magnetization_average_n=0;
 	double energy_squared_average_n=0,magnetization_squared_average_n=0;
+	double corr_data[3][cols]; //first col is for <SlSm>, second is for <Sl>, third is for <Sm>
+							   // each row corresponds to the interaction of corr_spin with someone of its row
 	
+	logg("prints files headers",log_file);
 	//meas.magn direc.spin
 	fprintf(meas,"%d	%lf	%d	%d	%d	%d\n",n_taus,J,1,rows,cols,n_measurments);
 	fprintf(direc,"%d	%lf	%d	%d	%d	%d\n",n_taus,J,1,rows,cols,n_measurments);
@@ -312,6 +374,7 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 	print_magn_field(direc,magn_field,rows,cols);
 	
 	for(tau=t_min;tau <= t_max;tau = next_tau(tau,t_min,t_max,n_taus)){
+		logg("running simulation for a specific temprature",log_file);
 		reset_system(original_lattice,lattice);
 		//meas.magn  direc.spin
 		fprintf(meas, "%lf\n",tau);
@@ -349,15 +412,32 @@ int start(FILE *input,FILE *meas, FILE *direc, FILE *corr){
 									thermal_stdev_new(energy_average_n,energy_squared_average_n),
 									magnetization_average_n,
 									thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
+		logg("done with that temprature",log_file);
 	}
+	logg("finish all simulations",log_file);
+	return 0;
 }
+//returns 0 if program finished successfully, 1 otherwise
 int main(int argc, char **argv)
 {
 	//prepare I/O files
-	FILE *input_file = stdin; //fopen("/home/yardenst/workspace/ferro/input/4/input.dat","r");
-	FILE *meas_output_file = fopen("./meas.magn","w"); //stdout;
-	FILE *direc_output_file = fopen("./direc.spin","w"); //stdout;
-	FILE *corr_output_file = fopen("./corr.corr","w"); //stdout;
+	FILE *input_file = stdin; 
+	FILE *errors_file = stderr;
+	FILE *progress_file = stdout;
+	FILE *meas_output_file = fopen("./meas.magn","w"); 
+	FILE *direc_output_file = fopen("./direc.spin","w"); 
+	FILE *corr_output_file = fopen("./corr.corr","w"); 
 	
-	start(input_file, meas_output_file, direc_output_file, corr_output_file);
+	int status=start(input_file, errors_file,progress_file, meas_output_file, direc_output_file, corr_output_file);
+	
+	if(status==0){
+		logg("finish program successfully",progress_file);
+	}
+	else{
+		logg("finish program with errors",progress_file);
+	}
+	
+	return status;
+	
+
 }
