@@ -327,12 +327,44 @@ double thermal_stdev_new(double average,double average_squared){
 	return stdev;
 }
 
-double G(int l,int m,int rows,int cols, int lattice[40][40]){
-	int row_l,col_l,row_m,col_m;
-	cell_index_to_row_col(l,rows,cols,&row_l,&col_l);
-	cell_index_to_row_col(m,rows,cols,&row_m,&col_m);
-	
-	
+
+void update_correlation_averages(double corr_data[3][40],int lattice[40][40], int rows,int cols,int corr_spin,int item_index){
+	int _c;
+	int corr_spin_r,corr_spin_c;
+	corr_spin=corr_spin-1;//my index is 0, there index start with 1
+	cell_index_to_row_col(corr_spin,rows,cols,&corr_spin_r,&corr_spin_c);
+	if(item_index==1){
+			for(_c=0;_c<cols;_c++){
+			corr_data[0][_c]= (double)lattice[corr_spin_r][corr_spin_c]*(double)lattice[corr_spin_r][_c]; //<SmSl>
+			corr_data[1][_c]= (double)lattice[corr_spin_r][corr_spin_c]; //<Sl>
+			corr_data[2][_c]= (double)lattice[corr_spin_r][_c]; //<Sm>
+			}
+	}
+	else{
+		for(_c=0;_c<cols;_c++){
+
+			corr_data[0][_c]=corr_data[0][_c]*(item_index-1)/(double)(item_index) +
+							(((double)lattice[corr_spin_r][corr_spin_c])*((double)(double)lattice[corr_spin_r][_c])/(double)item_index); //<SmSl>
+			
+			corr_data[1][_c]=corr_data[1][_c]*(item_index-1)/(double)(item_index) +
+							((double)lattice[corr_spin_r][corr_spin_c]/(double)item_index); //<Sl>
+							
+			corr_data[2][_c]=corr_data[2][_c]*(item_index-1)/(double)(item_index) +
+							((double)lattice[corr_spin_r][_c]/(double)item_index); //<Sm>
+		}
+	}
+}
+
+void print_G(FILE *output,double corr_data[3][40],int corr_spin,int rows,int cols){
+	int _c;
+	int corr_spin_r,corr_spin_c;
+	corr_spin=corr_spin-1;//my index is 0, there index start with 1
+	cell_index_to_row_col(corr_spin,rows,cols,&corr_spin_r,&corr_spin_c);
+	double G;
+	for(_c=0;_c<cols;_c++){
+		G=corr_spin_c == _c ? 1 : corr_data[0][_c]-corr_data[1][_c]*corr_data[2][_c];
+		fprintf(output,"%lf	",G);
+	}
 	
 }
 
@@ -361,7 +393,7 @@ int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc,
 	double current_energy,current_magnetization;
 	double energy_average_n=0,magnetization_average_n=0;
 	double energy_squared_average_n=0,magnetization_squared_average_n=0;
-	double corr_data[3][cols]; //first col is for <SlSm>, second is for <Sl>, third is for <Sm>
+	double corr_data[3][40]; //first col is for <SlSm>, second is for <Sl>, third is for <Sm>
 							   // each row corresponds to the interaction of corr_spin with someone of its row
 	
 	logg("prints files headers",log_file);
@@ -379,6 +411,7 @@ int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc,
 		//meas.magn  direc.spin
 		fprintf(meas, "%lf\n",tau);
 		fprintf(direc, "%lf\n",tau);
+		fprintf(corr, "%lf\n",tau);
 		
 		for(step_counter=0;step_counter<n_steps;step_counter++){
 			
@@ -391,6 +424,8 @@ int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc,
 			magnetization_average_n=update_thermal_average(magnetization_average_n,step_counter+1,current_magnetization);
 			magnetization_squared_average_n=update_thermal_average(magnetization_squared_average_n,step_counter+1,pow(current_magnetization,2));
 			
+			update_correlation_averages(corr_data,lattice,rows,cols,corr_spin,step_counter+1);
+			
 			if(need_to_print_measurment(step_counter,n_steps,n_measurments)){
 				//meas.magn
 				fprintf(meas,"%d	%lf	%lf	%lf	%lf\n",
@@ -402,6 +437,10 @@ int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc,
 				//direc.spin
 				fprintf(direc,"%d\n", step_index(step_counter,n_steps,n_measurments));
 				print_lattice(direc,lattice,rows,cols);
+				//corr.corr
+				fprintf(corr,"%d	", step_index(step_counter,n_steps,n_measurments));
+				print_G(corr,corr_data,corr_spin,rows,cols);
+				fprintf(corr,"\n");
 			}
 			do_step(random_numbers[step_counter][0],random_numbers[step_counter][1],rows,cols,lattice,magn_field,J,tau,boundry_conditions);
 		}
@@ -431,10 +470,10 @@ int main(int argc, char **argv)
 	int status=start(input_file, errors_file,progress_file, meas_output_file, direc_output_file, corr_output_file);
 	
 	if(status==0){
-		logg("finish program successfully",progress_file);
+		logg("finished program successfully",progress_file);
 	}
 	else{
-		logg("finish program with errors",progress_file);
+		logg("finished program with errors",progress_file);
 	}
 	
 	return status;
