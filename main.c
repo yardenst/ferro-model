@@ -327,7 +327,7 @@ double thermal_stdev_new(double average,double average_squared){
 	return stdev;
 }
 
-
+//keeps updating the values needed to calculate the G
 void update_correlation_averages(double corr_data[3][40],int lattice[40][40], int rows,int cols,int corr_spin,int item_index){
 	int _c;
 	int corr_spin_r,corr_spin_c;
@@ -355,6 +355,7 @@ void update_correlation_averages(double corr_data[3][40],int lattice[40][40], in
 	}
 }
 
+//prints the G row for the given corr_spin
 void print_G(FILE *output,double corr_data[3][40],int corr_spin,int rows,int cols){
 	int _c;
 	int corr_spin_r,corr_spin_c;
@@ -364,19 +365,28 @@ void print_G(FILE *output,double corr_data[3][40],int corr_spin,int rows,int col
 	for(_c=0;_c<cols;_c++){
 		G=corr_spin_c == _c ? 1 : corr_data[0][_c]-corr_data[1][_c]*corr_data[2][_c];
 		fprintf(output,"%lf	",G);
-	}
-	
+	}	
 }
 
-//runs the bussiness logic
+//stats the simulation
 int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc, FILE *corr){
-	//given variables
+	///given variables
 	int rows,cols,n_taus,n_steps,n_measurments,corr_spin;
 	double J,t_min,t_max;
 	char boundry_conditions;
 	int original_lattice[40][40];
 	double magn_field[40][40];
 	double random_numbers[300000][2];
+	///dynamic variables
+	int step_counter;
+	int lattice[40][40];
+	double tau;
+	double current_energy,current_magnetization;
+	double energy_average_n=0,magnetization_average_n=0;
+	double energy_squared_average_n=0,magnetization_squared_average_n=0;
+	double corr_data[3][40]; //first col is for <SlSm>, second is for <Sl>, third is for <Sm>
+							   // each row corresponds to the interaction of corr_spin with someone of its row
+							   
 	logg("reading initial data",log_file);
 	int errors=read_input_data(input,error_output,&rows,&cols,&J,&t_min,&t_max,&n_taus,&n_steps,&n_measurments,&boundry_conditions,original_lattice,magn_field,&corr_spin,random_numbers);
 	if(errors>0){
@@ -384,27 +394,19 @@ int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc,
 		return 1;
 	}
 	logg("finish reading initial data",log_file);
-	
-	//dynamic variables
-	int step_counter; //in which step are we?
-	int lattice[40][40];
-	copy_arr(original_lattice,lattice); //duplicate the original lattice
-	double tau;
-	double current_energy,current_magnetization;
-	double energy_average_n=0,magnetization_average_n=0;
-	double energy_squared_average_n=0,magnetization_squared_average_n=0;
-	double corr_data[3][40]; //first col is for <SlSm>, second is for <Sl>, third is for <Sm>
-							   // each row corresponds to the interaction of corr_spin with someone of its row
-	
+	copy_arr(original_lattice,lattice);
 	logg("prints files headers",log_file);
-	//meas.magn direc.spin
+	
+	//print headers to files
 	fprintf(meas,"%d	%lf	%d	%d	%d	%d\n",n_taus,J,1,rows,cols,n_measurments);
 	fprintf(direc,"%d	%lf	%d	%d	%d	%d\n",n_taus,J,1,rows,cols,n_measurments);
 	fprintf(meas,"H=\n");
 	fprintf(direc,"H=\n");
 	print_magn_field(meas,magn_field,rows,cols);
 	print_magn_field(direc,magn_field,rows,cols);
+	fprintf(corr,"%d	%lf	%d	%d	%d\n", n_taus,J,1,cols,n_measurments);
 	
+	//start iterating taus
 	for(tau=t_min;tau <= t_max;tau = next_tau(tau,t_min,t_max,n_taus)){
 		logg("running simulation for a specific temprature",log_file);
 		reset_system(original_lattice,lattice);
@@ -415,42 +417,30 @@ int start(FILE *input,FILE *error_output,FILE *log_file,FILE *meas, FILE *direc,
 		
 		for(step_counter=0;step_counter<n_steps;step_counter++){
 			
+			//calculate interesting values
 			current_energy=E(boundry_conditions,rows,cols,lattice,magn_field,J);
 			current_magnetization=M(lattice,rows,cols);
-			
 			energy_average_n=update_thermal_average(energy_average_n,step_counter+1,current_energy);
 			energy_squared_average_n=update_thermal_average(energy_squared_average_n,step_counter+1,pow(current_energy,2));
-
 			magnetization_average_n=update_thermal_average(magnetization_average_n,step_counter+1,current_magnetization);
 			magnetization_squared_average_n=update_thermal_average(magnetization_squared_average_n,step_counter+1,pow(current_magnetization,2));
-			
 			update_correlation_averages(corr_data,lattice,rows,cols,corr_spin,step_counter+1);
 			
+			//print interesting values to files
 			if(need_to_print_measurment(step_counter,n_steps,n_measurments)){
-				//meas.magn
-				fprintf(meas,"%d	%lf	%lf	%lf	%lf\n",
-									  step_index(step_counter,n_steps,n_measurments),
-									  current_energy,
-									  thermal_stdev_new(energy_average_n,energy_squared_average_n),
-									  current_magnetization,
-									  thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
-				//direc.spin
+				fprintf(meas,"%d	%lf	%lf	%lf	%lf\n", step_index(step_counter,n_steps,n_measurments), current_energy, thermal_stdev_new(energy_average_n,energy_squared_average_n),current_magnetization,thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
 				fprintf(direc,"%d\n", step_index(step_counter,n_steps,n_measurments));
 				print_lattice(direc,lattice,rows,cols);
-				//corr.corr
 				fprintf(corr,"%d	", step_index(step_counter,n_steps,n_measurments));
 				print_G(corr,corr_data,corr_spin,rows,cols);
 				fprintf(corr,"\n");
 			}
+			
 			do_step(random_numbers[step_counter][0],random_numbers[step_counter][1],rows,cols,lattice,magn_field,J,tau,boundry_conditions);
 		}
-		//meas.magn
+		//finsih tau
 		fprintf(meas, "result:\n");
-		fprintf(meas, "%lf	%lf	%lf	%lf \n",
-									energy_average_n,
-									thermal_stdev_new(energy_average_n,energy_squared_average_n),
-									magnetization_average_n,
-									thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
+		fprintf(meas, "%lf	%lf	%lf	%lf \n",energy_average_n,	thermal_stdev_new(energy_average_n,energy_squared_average_n),magnetization_average_n,thermal_stdev_new(magnetization_average_n,magnetization_squared_average_n));
 		logg("done with that temprature",log_file);
 	}
 	logg("finish all simulations",log_file);
@@ -467,8 +457,10 @@ int main(int argc, char **argv)
 	FILE *direc_output_file = fopen("./direc.spin","w"); 
 	FILE *corr_output_file = fopen("./corr.corr","w"); 
 	
+	//start simulation
 	int status=start(input_file, errors_file,progress_file, meas_output_file, direc_output_file, corr_output_file);
 	
+	//check is succeed
 	if(status==0){
 		logg("finished program successfully",progress_file);
 	}
